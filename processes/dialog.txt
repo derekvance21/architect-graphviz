@@ -1,0 +1,54 @@
+Name: Dialog
+Description: 
+Sub Type: Normal
+Comments: 
+Commander Viewable: NO
+Allow Dynamic Call: NO
+Keywords: 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  | 1    | --Start InMotion
+  | 2    | BEGIN     | Call          | Enhanced RF Constructor       | NEXT      | NEXT      
+  | 3    | --End InMotion
+  | 4    | --Log Employee input
+  | 5    |           | Compare       | Flag Employee Log Input Set?  | NEXT      | START     
+  | 6    |           | Compare       | EMP Log Input Flag Set?       | NEXT      | START     
+  | 7    |           | Call          | DBIns EIL Returns Scope Identity| NEXT      | FAILURE   
+  | 8    | START     | Compare       | Dialog Type = Dialog Type List?| LIST      | NEXT      
+  | 9    |           | Compare       | Dialog Type = Dialog Type List NoChoice?| LIST NC   | SET LENGTH
+  | 10   | LIST      | Call          | Dialog - List                 | SUCCESS   | CHK FAIL  
+  | 11   | --Dialog - List NoChoice will display a list with no sequence numbers or choice prompt
+  | 12   | LIST NC   | Call          | Dialog - List NoChoice        | SUCCESS   | CHK FAIL  
+  | 13   | SET LENGTH| Calculate     | Set SCR Lengths               | NEXT      | NEXT      
+  | 14   |           | Compare       | Dialog Type = Dialog Type Confirm?| CONFIRM   | NEXT      
+  | 15   |           | Compare       | Dialog Type = Dialog Type Refresh?| REFRESH   | NEXT      
+  | 16   |           | Compare       | Dialog Type = Dialog Type Prompt?| PROMPT    | NEXT      
+  | 17   |           | Compare       | Dialog Type = Dialog Type NoPrompt?| NOPROMPT  | NEXT      
+  | 18   |           | Compare       | Dialog Type = Dialog Type BigEntry?| BIGENTRY  | NEXT      
+  | 19   |           | Compare       | Dialog Type = Dialog Type Quick View Details?| QUICK VIEW| NEXT      
+  | 20   |           | Compare       | Dialog Type = Dialog Type LongText?| LONGTEXT  | FAILURE   
+  | 21   | NOPROMPT  | Call          | Dialog - NoPrompt             | SUCCESS   | CHK FAIL  
+  | 22   | PROMPT    | Call          | Dialog - Prompt               | SUCCESS   | CHK FAIL  
+  | 23   | CONFIRM   | Call          | Dialog - Confirm              | SUCCESS   | CHK FAIL  
+  | 24   | REFRESH   | Call          | Dialog - Refresh              | SUCCESS   | CHK FAIL  
+  | 25   | --Dialog - BigEntry will prompt with the appropriate screen help and allow the user to type in details with the remaining screen
+  | 26   | BIGENTRY  | Call          | Dialog - BigEntry             | SUCCESS   | CHK FAIL  
+  | 27   | QUICK VIEW| Call          | Dialog - Quick View Details   | SUCCESS   | CHK FAIL  
+  | 28   | LONGTEXT  | Call          | Dialog - LongText             | SUCCESS   | CHK FAIL  
+  | 29   | --For success and failure check if EIL is supposed to be used
+  | 30   | SUCCESS   | Compare       | EMP Log Input Flag Set?       | NEXT      | LEAVE 1   
+  | 31   |           | Call          | DBUpd EIL w/EIL ID            | NEXT      | FAILURE   
+  | 32   | LEAVE 1   | Return        | PASS                          | PASS      | PASS      
+  | 33   | --If the client is inMotion client, and dialog action failed, shoud process the dialog action error
+  | 34   | CHK FAIL  | Compare       | Security Policy = 4?          | NEXT      | FAILURE   
+  | 35   | --JD.Bricz - 9/9/22 - START - ability to set sys shortmsg to 0 and refresh screen
+  | 36   |           | Compare       | <F11-Refresh>?                | NEXT      | CHK FAIL 2
+  | 37   |           | Calculate     | SYS_SHORTMSG = ""             | BEGIN     | CHK FAIL 2
+  | 38   | --JD.Bricz - 9/9/22 - END - ability to set sys shortmsg to 0 and refresh screen
+  | 39   | CHK FAIL 2| Compare       | SYS_CANCEL = 0?               | NEXT      | FAILURE   
+  | 40   |           | Call          | Process Dialog Action Error   | NEXT      | NEXT      
+  | 41   | FAILURE   | Compare       | EMP Log Input Flag Set?       | NEXT      | LEAVE 2   
+  | 42   |           | Call          | DBUpd EIL w/EIL ID            | NEXT      | NEXT      
+  | 43   | LEAVE 2   | Return        | FAIL                          | FAIL      | FAIL      
+

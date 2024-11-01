@@ -1,0 +1,50 @@
+Name: Putaway Directed HLF
+Description: 
+Sub Type: Business Object
+Comments: 
+Commander Viewable: NO
+Allow Dynamic Call: NO
+Keywords: 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  | 1    | START     | Calculate     | Local ItemHU Ind = ItemHU Ind | NEXT      | ERROR     
+  | 2    |           | Calculate     | Printer Name = ""             | NEXT      | ERROR     
+  | 3    |           | Compare       | Transaction Code = "152"? - Receipt From Vendor (Put-away)| RECEIPT   | NEXT      
+  | 4    |           | Call          | DBExec SP Putaway Assignment  | NEXT      | NEXT      
+  | 5    | --
+  | 6    | DETERMINE | Call          | Determine Putaway Type HLF    | NEXT      | ERROR     
+  | 7    |           | Compare       | Putaway Type = ""?            | SUCCESS   | NEXT      
+  | 8    |           | Compare       | Putaway Type = Loading?       | LOADING   | NEXT      
+  | 9    |           | Compare       | Putaway Type = Putwall?       | PUTWALL   | NEXT      
+  | 10   |           | Compare       | Putaway Type = Picking?       | PICKING   | NEXT      
+  | 11   |           | Compare       | Putaway Type = Receipt?       | RECEIPT   | NEXT      
+  | 12   |           | Compare       | Putaway Type = Storage?       | CHK XDOCK | NEXT      
+  | 13   |           | Compare       | Putaway Type = Transfer?      | TRANSFER  | NEXT      
+  | 14   |           | Compare       | Putaway Type = VAS?           | VAS       | NEXT      
+  | 15   |           | Compare       | Putaway Type = WorkOrder?     | WORKORDER | ERROR     
+  | 16   | --Execute Put Away Type
+  | 17   | CHK XDOCK | Compare       | FLAG Cross-dock Set?          | NEXT      | STORAGE   
+  | 18   | --
+  | 19   |           | Call          | Cross Dock Processing HLF     | NEXT      | ERROR     
+  | 20   |           | Compare       | FLAG Fork Empty Set?          | SUCCESS   | STORAGE   
+  | 21   | --
+  | 22   | LOADING   | Call          | Putaway - Loading HLF         | DETERMINE | ERROR     
+  | 23   | PUTWALL   | Call          | Putaway - Putwall             | DETERMINE | ERROR     
+  | 24   | --
+  | 25   | PICKING   | Call          | Putaway - Picking HLF         | DETERMINE | ERROR     
+  | 26   | --
+  | 27   | RECEIPT   | Call          | Putaway - Receipt HLF         | DETERMINE | ERROR     
+  | 28   | --
+  | 29   | STORAGE   | Call          | Putaway - Storage HLF         | DETERMINE | ERROR     
+  | 30   | TRANSFER  | Call          | Putaway - Transfer            | DETERMINE | ERROR     
+  | 31   | VAS       | Call          | VAS Put                       | DETERMINE | ERROR     
+  | 32   | WORKORDER | Call          | Putaway - WorkOrder HLF       | DETERMINE | ERROR     
+  | 33   | --
+  | 34   | SUCCESS   | Calculate     | ItemHU Ind = Local ItemHU Ind | NEXT      | ERROR     
+  | 35   |           | Return        | PASS                          | PASS      | PASS      
+  | 36   | --For this process we should never retrun back to the calling process with an error.
+  | 37   | ERROR     | Calculate     | ItemHU Ind = Local ItemHU Ind | NEXT      | NEXT      
+  | 38   |           | Call          | Error Occurred                | START     | START     
+
+

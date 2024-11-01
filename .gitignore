@@ -1,0 +1,6 @@
+*.png
+.calva
+.clj-kondo
+.cpcache
+.lsp
+*.jpg

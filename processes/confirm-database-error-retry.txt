@@ -1,0 +1,47 @@
+Name: Confirm Database Error Retry
+Description: Reports Database error and allows the user to re-try
+Sub Type: Business Object
+Comments: DESCRIPTION
+
+ON EXIT
+     Pass:
+     Fail:
+
+REQUIRED FIELDS
+
+MODIFIED FIELDS
+
+MODIFICATIONS
+Date      By        Desc
+Commander Viewable: NO
+Allow Dynamic Call: NO
+Keywords: 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  | 1    | --To avoid exceeding the maximum number of calls allowed. Set EIL to a local variable, then turn EIL flag off
+  | 2    |           | Calculate     | Local EMP Log Input Flag = EMP Log Input Flag| NEXT      | LOG ERROR 
+  | 3    |           | Calculate     | EMP Log Input Flag = "N"      | NEXT      | LOG ERROR 
+  | 4    | --
+  | 5    |           | Calculate     | Local SCR = SCR               | NEXT      | LOG ERROR 
+  | 6    | --Add DB disconnect/reconnect to fix DB connection mapping issues
+  | 7    | CONNECT   | Database      | Disconnect                    | NEXT      | LOG ERROR 
+  | 8    |           | Database      | Connect to Database Server    | NEXT      | LOG ERROR 
+  | 9    | --Check security flag and if inMotion is being used then set different dialog type and no options.
+  | 10   | CHK POLICY| Compare       | Security Policy = 4?          | NEXT      | SCR TEXT2 
+  | 11   |           | Calculate     | ScrTxt: Database Error InMotion| DIALOG    | LOG ERROR 
+  | 12   | --Needed to remove disconnect as there are database actions that are used in Enhanced RF Constructor
+  | 13   | SCR TEXT2 | Calculate     | ScrTxt: Database Error        | NEXT      | LOG ERROR 
+  | 14   | DIALOG    | Call          | Dialog                        | SUCCESS   | NEXT      
+  | 15   |           | Compare       | <F1-Cancel>?                  | SUCCESS   | INV OPTION
+  | 16   | SUCCESS   | Calculate     | SCR = LOCAL SCR               | NEXT      | LOG ERROR 
+  | 17   | --Set EIL flag back to what it was when the PO started
+  | 18   |           | Calculate     | EMP Log Input Flag = Local EMP Log Input Flag| NEXT      | LOG ERROR 
+  | 19   |           | Return        | PASS                          | PASS      | PASS      
+  | 20   | LOG ERROR | Calculate     | Log: Error Occurred in SYS_PO | NEXT      | NEXT      
+  | 21   | LOG SEND  | Send          | Log Msg to APPLOG1 (Error)    | NEXT      | NEXT      
+  | 22   | FAILURE   | Calculate     | EMP Log Input Flag = Local EMP Log Input Flag| NEXT      | NEXT      
+  | 23   |           | Return        | FAIL                          | FAIL      | FAIL      
+  | 24   | --Error messages
+  | 25   | INV OPTION| Calculate     | Err: Invalid Option           | CONNECT   | LOG ERROR 
+

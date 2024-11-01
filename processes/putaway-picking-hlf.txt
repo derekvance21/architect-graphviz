@@ -1,0 +1,95 @@
+Name: Putaway - Picking HLF
+Description: 
+Sub Type: Normal
+Comments: 
+Commander Viewable: NO
+Allow Dynamic Call: NO
+Keywords: 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  | 1    | START     | Call          | Global Values - Manifesting   | NEXT      | FAILURE   
+  | 2    |           | Call          | Global Values - SkyTrack      | NEXT      | FAILURE   
+  | 3    |           | Calculate     | Order Number = ""             | NEXT      | LOG ERROR 
+  | 4    |           | Calculate     | Clear FLAG Move LP            | NEXT      | LOG ERROR 
+  | 5    | --                                                                                                                                                                                           
+  | 6    |           | Call          | DB LPNs On Fork?              | NEXT      | OUTBNDCHK                                                                                                            
+  | 7    |           | Call          | Printer - Label HLF           | NEXT      | FAILURE                                                                                                              
+  | 8    | --below Call will be: Print Fork LP Labels                                                                                                                                                   
+  | 9    |           | Call          | Print Shipping Docs for Load - HLF| NEXT      | NEXT                                                                                                             
+  | 10   | --If Outbound Pass process is enabled set the flag on
+  | 11   | OUTBNDCHK | Call          | DBExec SP Outbound Pass Check Flag| NEXT      | NEXT                                                                                                             
+  | 12   | SOURCE LP | Call          | Putaway Picking - Source LP   | NEXT      | FAILURE   
+  | 13   |           | Compare       | FLAG Move LP Set?             | LOCATION  | NEXT      
+  | 14   |           | Compare       | <F5-Pass>?                    | OUTPASS   | NEXT      
+  | 15   | --
+  | 16   | ITEM      | Call          | Putaway Picking - Item HLF    | NEXT      | SOURCE LP 
+  | 17   | --
+  | 18   | LOCATION  | Call          | Putaway Picking - Location HLF| INFO      | NEXT      
+  | 19   |           | Compare       | <F1-Cancel>?                  | NEXT      | FAILURE   
+  | 20   |           | Compare       | FLAG Move LP Set?             | SOURCE LP | ITEM      
+  | 21   | --
+  | 22   | INFO      | Call          | Putaway Picking - Info HLF    | CHK FLAG  | NEXT      
+  | 23   |           | Compare       | Source HU ID = ""?            | ITEM      | SOURCE LP 
+  | 24   | CHK FLAG  | Compare       | FLAG Move LP Set?             | LP UPDATE | NEXT      
+  | 25   |           | Call          | Putaway Picking - Quantity    | NEXT      | INFO      
+  | 26   | LP UPDATE | Call          | Putaway Picking - Fork LP Update| NEXT      | LOCATION  
+  | 27   | --
+  | 28   | DEST LP   | Call          | Putaway Picking - Dest LP HLF | TX        | NEXT      
+  | 29   | --IF F1 in case of SN controlled item then cleare the scanned table
+  | 30   |           | Calculate     | Serial Control = ITM Serial Control| NEXT      | LOG ERROR 
+  | 31   |           | Call          | Check Serial Number Tracking  | DEL SNS   | INFO      
+  | 32   | DEL SNS   | Call          | DBDel SNS w/User              | INFO      | FAILURE   
+  | 33   | TX        | Call          | Putaway Picking - TX          | NEXT      | INFO      
+  | 34   | WO?       | Compare       | Find Work = PICK WO?          | PRINT     | NEXT      
+  | 35   | CNT TYPE  | Call          | DBUpd HUM Pick Put w/HU HLF   | NEXT      | NEXT      
+  | 36   | --
+  | 37   | PRINT     | Compare       | Find Work = PICK WO?          | UPD WO    | NEXT      
+  | 38   |           | Compare       | Printer ID = "NOPRINT-LBL"?   | UPD WO    | NEXT      
+  | 39   |           | Call          | DBFind ORM w/Order Number HLF | NEXT      | NEXT      
+  | 40   |           | Compare       | ORM Ship To Country Code = "CA"?| FRENCH    | ENGLISH   
+  | 41   | ENGLISH   | Calculate     | Label Format = HLF_outbound_label| EXEC SQL  | LOG ERROR 
+  | 42   | FRENCH    | Calculate     | Label Format = HLF_outbound_ca_label| EXEC SQL  | LOG ERROR 
+  | 43   | EXEC SQL  | Call          | DBExec usp_lbl_pill_verify_outbound_lp_hlf| EXEC LBL  | LOG ERROR 
+  | 44   | EXEC LBL  | Call          | DBExec usp_lbl_pill_print_outbound_lp_hlf| NEXT      | LOG ERROR 
+  | 45   |           | Call          | ~Label Count~ label(s) sent to ~Printer ID~| NEXT      | LOG ERROR 
+  | 46   | --
+  | 47   | UPD WO    | Compare       | Find Work = PICK WO?          | NEXT      | TYPE = D  
+  | 48   | CHK LIMIT | Call          | DBExec SP Hold WO Bulk Pick   | NEXT      | FAILURE   
+  | 49   |           | Call          | DBUpd HUM Type=IV w/HU        | NEXT      | LOG ERROR 
+  | 50   | PICK UP   | Call          | Create Directed Pickup WO?    | NEXT      | FAILURE   
+  | 51   | --
+  | 52   | TYPE = D  | Compare       | LOC Type = "D"?               | CLOSE WKQ?| NEW CNTR  
+  | 53   | CLOSE WKQ?| Call          | Putaway Picking - Check Load Request| NEW CNTR  | LOG ERROR 
+  | 54   | --Create New Container if all the items on a container is not picked for Batch Picking
+  | 55   | --
+  | 56   | NEW CNTR  | Call          | Putaway Picking - New Container HLF| NEXT      | SOURCE LP 
+  | 57   | --If SkyTrack is intalled and Post Pick Pre-Delivery flag is set, then create SkyTrack pre shipment data
+  | 58   |           | Compare       | FLAG HJSkyTrack Installed Set?| NEXT      | MORE?     
+  | 59   |           | Compare       | FLAG HJSkyTrack Post Pick Set?| NEXT      | MORE?     
+  | 60   |           | Call          | DB!Exec SP SkyTrack Pre-Delivery Post-Pick| NEXT      | FAILURE   
+  | 61   | --
+  | 62   | MORE?     | Calculate     | Location = Fork ID            | NEXT      | LOG ERROR 
+  | 63   |           | Calculate     | Clear FLAG Move LP            | NEXT      | LOG ERROR 
+  | 64   |           | Call          | DBFind Next Pick Put w/Loc HLF| NEXT      | START     
+  | 65   |           | Compare       | SQL Count > 0?                | NEXT      | FORK EMPTY
+  | 66   |           | Compare       | Prev Order Number  = Order Number?| NEXT      | PRINT?    
+  | 67   | --
+  | 68   | --
+  | 69   |           | Calculate     | Source HU ID = HU ID          | NEXT      | LOG ERROR 
+  | 70   |           | Compare       | Find Work = PICK WO?          | SOURCE LP | INFO      
+  | 71   | --
+  | 72   | FORK EMPTY| Calculate     | Set FLAG Fork Empty           | NEXT      | LOG ERROR 
+  | 73   | --
+  | 74   | PRINT?    | Call          | Picking - Print Reports - HLF | NEXT      | SOURCE LP 
+  | 75   |           | Compare       | FLAG Fork Empty Set?          | NEXT      | SOURCE LP 
+  | 76   |           | Calculate     | Reset HU Variables            | SUCCESS   | LOG ERROR 
+  | 77   | --Outbound Sort Pass
+  | 78   | OUTPASS   | Call          | Outbound Sort - Pass          | NEXT      | START     
+  | 79   | --
+  | 80   | SUCCESS   | Return        | PASS                          | PASS      | PASS      
+  | 81   | LOG ERROR | Calculate     | Log: Error Occurred in SYS_PO | NEXT      | NEXT      
+  | 82   |           | Send          | Log Msg to APPLOG1 (Error)    | FAILURE   | FAILURE   
+  | 83   | FAILURE   | Return        | FAIL                          | FAIL      | FAIL      
+
+
