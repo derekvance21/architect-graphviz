@@ -6,7 +6,7 @@ cat putaway-directed-hlf.txt | clj -M -m cfg.core putaway-directed-hlf.jpg
 
 ## Example
 
-![Putaway Picking - HLF](out/putaway-picking-hlf.jpg)
+![Putaway Picking - HLF](putaway-picking-hlf.jpg)
 
 ## TODO
 
