@@ -207,15 +207,6 @@ Keywords:
       [0 (:line (next 0))]]
      (mapcat detail-nodes-and-edges ds))))
 
-(uber/viz-graph
- (apply
-  uber/digraph
-  (graph-inits
-   [{:line 1 :type "Call" :pass "SUCCEED" :fail "NEXT" :action "DBEXEC SOMETHING"}
-    {:line 2 :type "Calculate" :pass "SUCCEED" :fail "NEXT" :action "X += 1"}
-    
-    {:label "SUCCEED" :line 3 :type "Return" :pass "PASS" :fail "PASS" :action "PASS"}])))
-
 (defn diff-graph
   [diff]
   (apply uber/digraph
@@ -226,11 +217,6 @@ Keywords:
   (graph-inits (details valid-pallet-str))
   
   )
-
-(def valid-pallet-g
-  "Valid Pallet [F] Build Ship PT"
-  (apply uber/digraph
-         (graph-inits (details valid-pallet-str))))
 
 (defn diff-name
   [diff]
@@ -302,28 +288,16 @@ Keywords:
    Return PASS"
   )
 
-(comment
-  (uber/viz-graph 
-   dbdel-g
-                  {:layout :dot
-                   :save {:filename "graph.jpg"
-                          :format :jpg}
-                   :label "DBDel PO"
-                   :labelloc "t"})
-
-  (uber/viz-graph
-   valid-pallet-g
-   {:layout :dot
-    :save {:filename "valid-pallet-graph.jpg"
-           :format :jpg}
-    })
-
-
-  )
-
 (defn -main
   [& args]
-  (let [[file] args]
-    (diff-graph-viz (slurp *in*) file))
-  nil)
-
+  (if-let [[jpg process] args]
+    (if (or (nil? process) (= process "-"))
+      (diff-graph-viz (slurp *in*) jpg)
+      (diff-graph-viz (slurp process) jpg)
+      
+    )
+    (println "Usage:
+clj -M -m cfg.core OUTPUT_JPG PROCESS_FILE
+clj -M -m cfg.core OUTPUT_JPG [-] # read from stdin")
+  )
+)
