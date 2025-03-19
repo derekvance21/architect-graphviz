@@ -128,10 +128,6 @@ Keywords:
 |    | FAILURE    |            |            | Return       | FAIL")
 
 
-
-(str/split "  | 1    | DB ACTION | Database      | Upd PKD Stage Loc w/Fork ID, HU ID| DONE      | NEXT      "
-           #"\|")
-
 (def valid-pallet-str
   "	1	  	          	Calculate   	Local Parent HU = Parent HU ID	          	          
 	2	  	          	Compare     	Screen Override FLAG Set?     	          	SCREEN    
@@ -237,60 +233,67 @@ Keywords:
   (source-details packing-source-str) 
   )
 
+
+(defn name->href
+  [name]
+  (let [char-map ;; from wikipedia: https://en.wikipedia.org/wiki/Filename#Reserved_characters_and_words
+        {"/" "\u29f8"
+         "\\" "\u29f9"
+         "?" "\u0294"
+         "*" "\u2217"
+         ":" "\u2236"
+         "<" "\u02c2"
+         ">" "\u02C3"
+         "\"" "\u201C"
+         "|" "\u2223"
+         "&" "&amp;" ;; &'s are required to be converted to &amp; in svg
+
+         }
+               ;; from stack exchange: https://lifehacks.stackexchange.com/questions/24681/hack-to-indicate-a-forward-slash-or-backslash-in-a-filename-when-those-are-reser
+        #_{"/" (str \u2215)
+           "\\" (str \u244a)}]
+    (str/replace name
+                 (re-pattern (str "[" (str/join (map str/re-quote-replacement (keys char-map))) "]"))
+                 char-map)))
+
 (defn graph-inits
   [ds]
-  (let [;; ds (vec ds)
-        next (fn [line] (first (filter #(> (:line %) line) ds)))
+  (let [next (fn [line] (first (filter #(> (:line %) line) ds)))
         previous (fn [line] (last (filter #(< (:line %) line) ds)))
         label-map (into {"NEXT" next
                          "PREVIOUS" previous}
                         (map (juxt :label constantly)
                              (filter :label ds)))
-        ;; detail-by-line (fn [line] (first (filter #(= (:line %) line) ds)))
-        ;; labels (->> (filter :label ds)
-        ;;          (map #(vector (:line %) {:label (:label %)})))
-        ;; TODO definitely combine nodes and edges. Both are functions of d. Have them return a list of nodes and edges that the detail should create
-        ;; nodes (map (fn [{:keys [label line type action]}]
-        ;;              (let [node-attrs (cond->
-        ;;                                {:type type
-        ;;                                 :action action
-        ;;                                 :label (str \[ line \] (when label \space) label \newline type \newline action)}
-        ;;                                 ;; (= type "Compare") (assoc :shape :diamond)
-        ;;                                 ;; label (assoc :label label)
-        ;;                                 (= type "Return") (assoc :style :filled
-        ;;                                                          :fillcolor (case action
-        ;;                                                                       "PASS" :green
-        ;;                                                                       "FAIL" :red)))]
-        ;;                [line node-attrs]))
-        ;;            ds)
         detail-target (fn [detail label]
                         ((get label-map label next) (:line detail)))
-        ;; edges (fn [d]
-        ;;         (let [{:keys [type line pass fail]} d
-        ;;               pass-line ((get label-map pass next) line)
-        ;;               fail-line ((get label-map fail next) line)]
-        ;;           (case type
-        ;;             "Return" nil ;; return nodes don't have any outgoing edges
-        ;;             "Calculate" [[line pass-line]] ;; assume calculate actions will always pass
-        ;;             (if (= pass-line fail-line)
-        ;;               [[line pass-line]]
-        ;;               [[line pass-line {;:label :pass
-        ;;                                 :color :green}]
-        ;;                [line fail-line {;:label :fail
-        ;;                                 :color :red}]]))
-        ;;           #_(when (not= type "Return")
-        ;;               (if (= pass-line fail-line)
-        ;;                 [[line pass-line]]
-        ;;                 [[line pass-line {:label :pass}]
-        ;;                  [line fail-line {:label :fail}]]))))
         detail-node (fn detail-node
                       ([detail]
                        (detail-node detail (:line detail)))
                       ([{:keys [label line type action]} node-id]
                        (let [node-label (str \[ line \] (when label \space) label \newline type \newline action)
-                             attrs (cond-> {:type type
+                             attrs (cond-> {:id node-id
+                                            :type type
                                             :action action
+                                            :shape (get {"Call" (if (= action "Dialog") :parallelogram :box #_:box3d)
+                                                         "Calculate" :box
+                                                         "Goto" :circle
+                                                         "Compare" :oval #_:hexagon #_:diamond
+                                                         "Database" :cylinder
+                                                         "Return" :oval
+                                                         }
+                                                        type
+                                                        :note)
                                             :label node-label}
+                                     (contains? #{"Call"} type)
+                                     (assoc :peripheries 2)
+                                     (contains? #{"Call" "Calculate" "Database" "Compare"} type)
+                                     (assoc :href 
+                                            (if (= type "Call")
+                                              (str "../ProcessObject/" (name->href action) ".arch.svg")
+                                              (str "../" type "/" (name->href action) ".arch")
+                                              )
+                                            
+                                            )
                                      (= type "Return") (assoc
                                                         :style :filled
                                                         :fillcolor (case action
@@ -381,7 +384,8 @@ Keywords:
 (defn source-graph-viz
   ([source]
    (source-graph-viz source nil))
-  ([source file]
+  ([source file & {:keys [format]
+                   :or {format :svg}}]
    (let [g (source-graph source)
          name (source-name source)]
      (uber/viz-graph
@@ -391,74 +395,37 @@ Keywords:
               :labelloc "t"}
              (when file
                {:save {:filename file
-                       :format :png}}))))))
+                       :format :dot #_format}}))))))
 
-(comment
-  
-  (source-graph-viz packing-source-str "out/packing2.jpg")
 
-  (graph-inits (diff-details
-                (slurp "confirm-database-error-retry.txt")))
-  (diff-graph (slurp "confirm-database-error-retry.txt"))
-  (diff-graph-viz
-   (slurp "confirm-database-error-retry.txt")
-   "confirm-database-error-retry2.jpg")
-
-  (diff-details (slurp "confirm-database-error-retry.txt"))
-  (graph-inits (diff-details (slurp "confirm-database-error-retry.txt")))
-  (graph-inits (diff-details (slurp "confirm-database-error-retry.txt")))
-
-  (diff-graph-viz
-   (slurp "dialog.txt")
-   "dialog2.jpg")
+(let [source  (slurp "/home/dvance/HLF-3-14/WA/ProcessObject/Directed Pickup - Quantity.arch")
+      g (source-graph source)]
+  (sort-by (comp #(Integer/parseInt %) #(re-find #"\d+" %) str first) (map #(uber/node-with-attrs g %) (uber/nodes g)))
   )
 
-(comment
-  '(if (1)
-     (do
-       (6)
-       (7))
-     (do
-       (while (not (2))
-         (if (not (3))
-           (4)))
-       (5)))
-
-  '(if (Compare "Identifier = \"\"?")
-     ((Calculate "Err: Data Error")
-      (Return :FAIL))
-     ((while (not (Database "Del UEA w/Ident, Attrib ID"))
-        (if (not (Compare "Deadlock Error?"))
-          (Call "Confirm Database Error Retry")))
-      (Return :PASS)))
-  "If Identifier = \"\"? {
-      Calculate(Err: Data Error)
-      Return FAIL
-   }
-   While !Database(Del UEA w/Ident, Attrib ID) {
-      If !Deadlock Error? {
-         Call(Confirm Database Error Retry)
-      }
-   }
-   Return PASS"
-  )
 
 (defn -main
   [& args]
-  (if (seq args)
-    (if (= "-s" (first args))
-      (let [[_ out-folder & files] args]
+  (if-let [[opt & rest-args] (seq args)]
+    (case opt
+      "-s" 
+      (let [[folder & files] rest-args]
         (doseq [file files]
-          (let [f (io/file out-folder (.getName (io/file file)))]
+          (let [f (io/file folder (.getName (io/file file)))]
             (io/make-parents f)
-            (source-graph-viz (slurp file) (str f ".png")))))
+            (source-graph-viz (slurp file) (str f ".dot" )))))
+      "-i"
+      (doseq [file rest-args]
+        (let [f (io/file file)]
+          (source-graph-viz (slurp f) (str f ".dot"))))
       (let [[jpg process] args]
         (if (or (nil? process) (= process "-"))
           (diff-graph-viz (slurp *in*) jpg)
           (diff-graph-viz (slurp process) jpg))))
     (println
-     (str/join "\n"
-               ["Usage:"
-                "clj -M -m cfg.core OUTPUT_JPG PROCESS_FILE"
-                "clj -M -m cfg.core OUTPUT_JPG [-] # read from stdin"
-                "clj -M -m cfg.core -s OUT_FOLDER [SOURCE_FILE] ..."]))))
+      (str/join "\n"
+                ["Usage:"
+                 "clj -M -m cfg.core OUTPUT_JPG PROCESS_FILE"
+                 "clj -M -m cfg.core OUTPUT_JPG [-]"
+                 "clj -M -m cfg.core -i [PROCESS_FILE] ..."
+                 "clj -M -m cfg.core -s OUT_FOLDER [SOURCE_FILE] ..."]))))

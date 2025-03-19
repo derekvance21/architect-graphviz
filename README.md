@@ -11,6 +11,7 @@ clj -M -m cfg.core putaway-directed-hlf.jpg < putaway-directed-hlf.txt
 
 ## TODO
 
+- [ ] here's an idea: so Architect process objects often have empty line comments that delimit sections of logic. You could use those to create clusters. or some other way to incorporate comments. They generally have some meaning to them, and currently we're throwing them away
 - [ ] if there's a sequence of actions that don't have differing pass/fail targets, then that can just be one node. Like think about a line of calculate actions in a row. That sometimes happens. You don't need to split those into separate nodes. They can be one node with multiple line number/action labels inside. Maybe use the node label formatting to put a horizontal line separating them. `picking-item-select-wo-hlf` is a good example of this concept - look at the end of the process.
     - if these multi-action nodes end with a flow control branch, then it's assumed the last action in the node determines pass/fail
     - or maybe don't do that ^. A decision node should always be on its own
