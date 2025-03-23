@@ -237,24 +237,22 @@ Keywords:
 (defn name->href
   [name]
   (let [char-map ;; from wikipedia: https://en.wikipedia.org/wiki/Filename#Reserved_characters_and_words
-        {"/" "\u29f8"
-         "\\" "\u29f9"
-         "?" "\u0294"
-         "*" "\u2217"
-         ":" "\u2236"
-         "<" "\u02c2"
-         ">" "\u02C3"
-         "\"" "\u201C"
-         "|" "\u2223"
-         "&" "&amp;" ;; &'s are required to be converted to &amp; in svg
-
+        {\/ "\u29f8"
+         \\ "\u29f9"
+         \? "\u0294"
+         \* "\u2217"
+         \: "\u2236"
+         \< "\u02c2"
+         \> "\u02C3"
+         \" "\u201C"
+         \| "\u2223"
+         \& "&amp;" ;; &'s are required to be converted to &amp; in svg
+         ;; there's also uber/escape-label, which'll do the XML stuff after you transform the filepaths
          }
                ;; from stack exchange: https://lifehacks.stackexchange.com/questions/24681/hack-to-indicate-a-forward-slash-or-backslash-in-a-filename-when-those-are-reser
         #_{"/" (str \u2215)
            "\\" (str \u244a)}]
-    (str/replace name
-                 (re-pattern (str "[" (str/join (map str/re-quote-replacement (keys char-map))) "]"))
-                 char-map)))
+    (str/escape name char-map)))
 
 (defn graph-inits
   [ds]
@@ -270,30 +268,36 @@ Keywords:
                       ([detail]
                        (detail-node detail (:line detail)))
                       ([{:keys [label line type action]} node-id]
-                       (let [node-label (str \[ line \] (when label \space) label \newline type \newline action)
+                       (let [node-label (str "<FONT>"
+                                             (str/join "<br />"
+                                                       [(str \[ line \] (when label \space) label)
+                                                        type
+                                                        action])
+                                             "</FONT>")
                              attrs (cond-> {:id node-id
                                             :type type
                                             :action action
-                                            :shape (get {"Call" (if (= action "Dialog") :parallelogram :box #_:box3d)
+                                            :shape (get {"Call" (if (contains? #{"Dialog" "Universal Quantity"} action)
+                                                                  :parallelogram
+                                                                  :box #_:box3d)
                                                          "Calculate" :box
-                                                         "Goto" :circle
-                                                         "Compare" :oval #_:hexagon #_:diamond
+                                                         "Goto" :box
+                                                         "Compare" :box #_:hexagon #_:diamond
                                                          "Database" :cylinder
-                                                         "Return" :oval
-                                                         }
+                                                         "Return" :box}
                                                         type
                                                         :note)
-                                            :label node-label}
-                                     (contains? #{"Call"} type)
-                                     (assoc :peripheries 2)
+                                            :label node-label
+                                            :fontsize "10"
+                                            }
+                                     (contains? #{"Call"} type) (assoc :peripheries 2)
+                                     (contains? #{"Compare"} type) (assoc :style "dashed")
+                                     (contains? #{"Return"} type) (assoc :style "rounded")
                                      (contains? #{"Call" "Calculate" "Database" "Compare"} type)
-                                     (assoc :href 
+                                     (assoc :href
                                             (if (= type "Call")
                                               (str "../ProcessObject/" (name->href action) ".arch.svg")
-                                              (str "../" type "/" (name->href action) ".arch")
-                                              )
-                                            
-                                            )
+                                              (str "../" type "/" (name->href action) ".arch")))
                                      (= type "Return") (assoc
                                                         :style :filled
                                                         :fillcolor (case action
@@ -313,7 +317,9 @@ Keywords:
                               (when dst-return?
                                 [(detail-node dst dst-id)])
                               (if color
-                                [[src-id dst-id {:color color}]]
+                                [[src-id dst-id {:color color
+                                                 ;; :headport :e ;; this was just to test that these things work!
+                                                 }]]
                                 [[src-id dst-id]])))))
         detail-nodes-and-edges
         (fn [{:keys [line type pass fail] :as detail}]
@@ -331,11 +337,17 @@ Keywords:
     (concat
      [[0 {:label "Θ"
           :shape :doublecircle
+          ;; :rank :min ;; the start node should always be at the top anyways, but this is how rank could be used
           ;; :fillcolor :black
           ;; :fontcolor :black
           }]
       [0 (:line (next 0))]]
      (mapcat detail-nodes-and-edges ds))))
+
+;; infer blocks
+;; create ports
+;; adjust edges into block to point to block, with portPos PORT
+;; delete the old nodes in the block (which should auto-delete involved nodes)
 
 (defn diff-graph
   [diff]
@@ -381,6 +393,7 @@ Keywords:
          {:save {:filename file
                  :format :jpg}}))))))
 
+
 (defn source-graph-viz
   ([source]
    (source-graph-viz source nil))
@@ -395,12 +408,23 @@ Keywords:
               :labelloc "t"}
              (when file
                {:save {:filename file
-                       :format :dot #_format}}))))))
+                       :format #_:dot format}}))))))
 
+(comment
+  
+  (let [source  (slurp "/home/dvance/HLF-3-14/WA/ProcessObject/Directed Pickup - Quantity.arch")]
+    (source-graph-viz source "test.dot" {:format :dot})
+    (source-graph-viz source)
+    )
+  
+  (let [source  (slurp "/home/dvance/HLF-3-14/WA/ProcessObject/Directed Pickup - Quantity.arch")
+        g (source-graph source)]
+    (uber/nodes g)
+    )
 
-(let [source  (slurp "/home/dvance/HLF-3-14/WA/ProcessObject/Directed Pickup - Quantity.arch")
-      g (source-graph source)]
-  (sort-by (comp #(Integer/parseInt %) #(re-find #"\d+" %) str first) (map #(uber/node-with-attrs g %) (uber/nodes g)))
+  (let [source  (slurp "/home/dvance/HLF-3-14/WA/ProcessObject/Directed Pickup - Quantity.arch")
+        g (source-graph source)]
+    (sort-by (comp #(Integer/parseInt %) #(re-find #"\d+" %) str first) (map #(uber/node-with-attrs g %) (uber/nodes g))))
   )
 
 
@@ -417,7 +441,7 @@ Keywords:
       "-i"
       (doseq [file rest-args]
         (let [f (io/file file)]
-          (source-graph-viz (slurp f) (str f ".dot"))))
+          (source-graph-viz (slurp f) (str f "." (name :svg) ) {:format :svg})))
       (let [[jpg process] args]
         (if (or (nil? process) (= process "-"))
           (diff-graph-viz (slurp *in*) jpg)
