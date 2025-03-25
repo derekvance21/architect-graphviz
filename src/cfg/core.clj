@@ -2,6 +2,7 @@
   (:require
    [clojure.tools.cli :as cli]
    [ubergraph.core :as uber]
+   [ubergraph.alg :as alg]
    [clojure.string :as str]
    [clojure.java.io :as io])
   (:gen-class))
@@ -14,8 +15,7 @@
        (map str/trim (str/split line #"\|")))
       (->> (remove (comp empty? val))
            (into {}))
-      (update :line #(Integer/parseInt %)))
-  )
+      (update :line #(Integer/parseInt %))))
 
 
 (defn diff-details
@@ -29,8 +29,7 @@
     (map diff-columns)
     (remove #(when-let [label (:label %)]
                (re-find #"--" label))))
-   (str/split-lines s))
-  )
+   (str/split-lines s)))
 
 
 (defn source-columns
@@ -54,8 +53,7 @@
     (map source-columns)
     (map-indexed (fn [i m]
                    (assoc m :line (inc i))))
-    (remove :comment)
-    )
+    (remove :comment))
    (str/split-lines s)))
 
 
@@ -163,7 +161,7 @@
 
 
 (defn source-name
- [s]
+  [s]
   (first (str/split-lines s)))
 
 
@@ -198,8 +196,7 @@
    ["-o" "--output FILE" "Output file"]
    ["-i" "--inplace" "In-place output relative to input FILE"]
    ["-X" "--extension EXT" "Output file extension type (requires -i)"]
-   ["-h" "--help"]
-   ])
+   ["-h" "--help"]])
 
 
 (defn usage
@@ -235,26 +232,13 @@
       p)))
 
 
-(comment
-  
-  (as-> (slurp "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch") x
-      (source-details x)
-      (graph-inits x)
-      (multidigraph x)
-      (transform-graph x)
-    
-    (uber/viz-graph x)
-      )
-  
-  
-  )
-
-
 (defn color-edges
   [graph]
   (reduce
    (fn [g e]
-     (uber/add-attr g e :color (get {:pass :green :fail :red} (uber/attr g e :type))))
+     (if-let [color (get {:pass :green :fail :red} (uber/attr g e :type))]
+       (uber/add-attr g e :color color)
+       g))
    graph
    (uber/edges graph)))
 
@@ -296,16 +280,45 @@
           (filter
            (fn [e]
              (= :fail (uber/attr graph e :type)))))
-         (uber/nodes graph)))
-  )
+         (uber/nodes graph))))
 
 
 (defn merge-edges
   [graph]
   ;; TODO
-graph
+  (reduce
+   (fn [g n]
+     (let [out-edges (uber/out-edges g n)]
+       (if-let [[e & es] (seq out-edges)]
+         (if (seq es) ;; more than one out-edge
+           (reduce
+            (fn [g' [dest [e & es]]]
+              (if (seq es) ;; if there's more than one edge going to dest
+                (-> g'
+                    (uber/remove-attr e :type) ;; becomes a "type"-less edge
+                    (uber/remove-edges* es))
 
-  )
+                g'))
+            g
+            (group-by uber/dest out-edges))
+           (uber/remove-attr g e :type) ;; only one out-edge, so "type"-less edge
+           )
+         g ;; no out-edges, so nothing to do
+         )))
+   graph
+   (uber/nodes graph)))
+
+
+(defn remove-unconnected
+  [graph]
+  (uber/remove-nodes*
+   graph
+   (into []
+         (comp
+          (map set)
+          (remove #(contains? % 0))
+          cat)
+         (alg/connected-components graph))))
 
 
 (defn transform-graph
@@ -314,9 +327,20 @@ graph
       (short-circuit-returns)
       (remove-calculate-fail-edges)
       (merge-edges)
-      (color-edges)
-      
-      ))
+      (remove-unconnected)
+      (color-edges)))
+
+
+(comment
+
+  (as-> (slurp "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch") x
+    (source-details x)
+    (graph-inits x)
+    (multidigraph x)
+    (transform-graph x)
+    (uber/viz-graph x))
+  
+  )
 
 
 (defn -main
