@@ -92,10 +92,11 @@
         previous (fn [line] (last (filter #(< (:line %) line) ds)))
         label-map (into {"NEXT" next
                          "PREVIOUS" previous}
-                        (map (juxt :label constantly)
-                             (filter :label ds)))
-        detail-target (fn [detail label]
-                        ((get label-map label next) (:line detail)))
+                        (comp (filter :label)
+                              (map (juxt :label constantly)))
+                        ds)
+        detail-target (fn [source label]
+                        (:line ((get label-map label next) source)))
         detail-node (fn detail-node
                       ([detail]
                        (detail-node detail (:line detail)))
@@ -120,8 +121,7 @@
                                                         type
                                                         :note)
                                             :label node-label
-                                            :fontsize "10"
-                                            }
+                                            :fontsize "10"}
                                      (contains? #{"Call"} type) (assoc :peripheries 2)
                                      (contains? #{"Compare"} type) (assoc :style "dashed")
                                      (contains? #{"Return"} type) (assoc :style "rounded")
@@ -136,45 +136,25 @@
                                                                      "PASS" :green
                                                                      "FAIL" :red)))]
                          [node-id attrs])))
-        src->dest-inits (fn src->dest
-                          ([src-id dst]
-                           (src->dest src-id dst nil))
-                          ([src-id dst color]
-                           (let [{dst-type :type dst-line :line} dst
-                                 dst-return? (= dst-type "Return")
-                                 dst-id (if dst-return?
-                                          (str src-id \- dst-line)
-                                          dst-line)]
-                             (concat
-                              (when dst-return?
-                                [(detail-node dst dst-id)])
-                              (if color
-                                [[src-id dst-id {:color color
-                                                 ;; :headport :e ;; this was just to test that these things work!
-                                                 }]]
-                                [[src-id dst-id]])))))
         detail-nodes-and-edges
         (fn [{:keys [line type pass fail] :as detail}]
-          (let [{pass-line :line :as pass-target} (detail-target detail pass)
-                {fail-line :line :as fail-target} (detail-target detail fail)]
-            (when (not= type "Return")
-              (concat
-               [(detail-node detail)]
-               (if (or (= fail-line pass-line)
-                       (= type "Calculate"))
-                 (src->dest-inits line pass-target)
-                 (concat
-                  (src->dest-inits line pass-target :green)
-                  (src->dest-inits line fail-target :red)))))))]
-    (concat
-     [[0 {:label "Θ"
+          (let [pass-line (detail-target line pass)
+                fail-line (detail-target line fail)]
+            (into
+             [(detail-node detail)]
+             (when (not= type "Return") ;; Return nodes don't have out-edges
+               [[line pass-line {:type :pass}]
+                [line fail-line {:type :fail}]]))))]
+    (into
+     [[0 {:label ""
           :shape :doublecircle
           ;; :rank :min ;; the start node should always be at the top anyways, but this is how rank could be used
           ;; :fillcolor :black
           ;; :fontcolor :black
           }]
       [0 (:line (next 0))]]
-     (mapcat detail-nodes-and-edges ds))))
+     (mapcat detail-nodes-and-edges)
+     ds)))
 
 
 (defn diff-name
@@ -187,9 +167,9 @@
   (first (str/split-lines s)))
 
 
-(defn digraph
+(defn multidigraph
   [inits]
-  (apply uber/digraph inits))
+  (apply uber/multidigraph inits))
 
 
 (def graphviz-output-formats
@@ -255,6 +235,90 @@
       p)))
 
 
+(comment
+  
+  (as-> (slurp "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch") x
+      (source-details x)
+      (graph-inits x)
+      (multidigraph x)
+      (transform-graph x)
+    
+    (uber/viz-graph x)
+      )
+  
+  
+  )
+
+
+(defn color-edges
+  [graph]
+  (reduce
+   (fn [g e]
+     (uber/add-attr g e :color (get {:pass :green :fail :red} (uber/attr g e :type))))
+   graph
+   (uber/edges graph)))
+
+
+(defn short-circuit-returns
+  [graph]
+  (let [return-nodes (filterv
+                      (fn [n]
+                        (= "Return" (uber/attr graph n :type)))
+                      (uber/nodes graph))]
+    (-> (reduce
+         (fn [g return-node]
+           (let [return-attrs (uber/attrs g return-node)]
+             (reduce (fn [g return-edge]
+                       (let [[src dest edge-attrs] (uber/edge-with-attrs g return-edge)
+                             return-id (str src \- dest)]
+                         (uber/build-graph g
+                                           [return-id return-attrs]
+                                           [src return-id edge-attrs])))
+                     g
+                     (uber/in-edges g return-node))))
+         graph
+         return-nodes)
+        (uber/remove-nodes* return-nodes))))
+
+
+(defn remove-calculate-fail-edges
+  [graph]
+  (uber/remove-edges*
+   graph
+   (into []
+         (comp
+          (filter
+           (fn [n]
+             (= "Calculate" (uber/attr graph n :type))))
+          (mapcat
+           (fn [n]
+             (uber/out-edges graph n)))
+          (filter
+           (fn [e]
+             (= :fail (uber/attr graph e :type)))))
+         (uber/nodes graph)))
+  )
+
+
+(defn merge-edges
+  [graph]
+  ;; TODO
+graph
+
+  )
+
+
+(defn transform-graph
+  [graph]
+  (-> graph
+      (short-circuit-returns)
+      (remove-calculate-fail-edges)
+      (merge-edges)
+      (color-edges)
+      
+      ))
+
+
 (defn -main
   [& args]
   (let [{:keys [exit-message ok? options arguments]} (validate-args args)]
@@ -266,7 +330,7 @@
                 [title details] (if (= input-type :diff)
                                   [(diff-name text) (diff-details text)]
                                   [(source-name text) (source-details text)])
-                graph (digraph (graph-inits details))
+                graph (multidigraph (graph-inits details))
                 save (when (or output directory inplace) ;; save to file
                        (let [format (or output-type :svg)
                              filename (or output
@@ -278,8 +342,10 @@
                                             (str (io/file parent child))))]
                          {:save {:filename filename
                                  :format format}}))]
-            (uber/viz-graph graph (merge
-                                   {:layout :dot
-                                    :label title
-                                    :labelloc "t"}
-                                   save))))))))
+            (uber/viz-graph
+             (transform-graph graph)
+             (merge
+              {:layout :dot
+               :label title
+               :labelloc "t"}
+              save))))))))
