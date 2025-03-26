@@ -98,7 +98,7 @@
                               (map (juxt :label constantly)))
                         ds)
         detail-target (fn [source label]
-                        (:line ((get label-map label next) source)))
+                        (get ((get label-map label next) source) :line start-node))
         detail-node (fn detail-node
                       ([detail]
                        (detail-node detail (:line detail)))
@@ -150,15 +150,12 @@
                 [line fail-line {:type :fail}]]))))]
     (into
      [[start-node {:label ""
-          :shape :doublecircle
-          ;; :rank :min ;; the start node should always be at the top anyways, but this is how rank could be used
-          ;; :fillcolor :black
-          ;; :fontcolor :black
-          }]
+                   :shape :doublecircle
+                   :rank :min ;; the start node should always be at the top anyways, but this is how rank could be used
+                   }]
       [start-node (:line (next 0))]]
      (mapcat detail-nodes-and-edges)
      ds)))
-
 
 (defn diff-name
   [diff]
@@ -378,15 +375,19 @@
                     (str/join
                      (into []
                            (map (fn [n]
-                                  (let [{:keys [label href style border]} (uber/attrs graph n)]
+                                  (let [{:keys [label href style border fillcolor target]} (uber/attrs graph n)]
                                     (str "<TR><TD"
                                          " PORT=\"" n "\""
                                          (when href
                                            (str " HREF=\"" href "\""))
+                                         (when target
+                                           (str " TARGET=\"" target "\""))
                                          (when style
                                            (str " STYLE=\"" style "\""))
                                          (when border
                                            (str " BORDER=\"" border "\""))
+                                         (when fillcolor
+                                           (str " BGCOLOR=\"" (name fillcolor) "\""))
                                          ">"
                                          label
                                          "</TD></TR>"))))
@@ -471,13 +472,16 @@
                        (not (is-a-dialog? graph n))
                        (or (> (uber/in-degree graph n) 1)
                            (some (fn [e]
-                                   (or
-                                    (= 0 (uber/src e))
-                                    (= :fail (uber/attr graph e :type))))
+                                   (let [src (uber/src e)]
+                                     (or
+                                      (is-a-dialog? graph src)
+                                      (= start-node src)
+                                      (uber/attr graph src :block) ;; if predecessor is a block, then this can be a leader
+                                      (= :fail (uber/attr graph e :type)))))
                                  (uber/in-edges graph n)))))
         follower? (fn [n predecessor depth]
                     ;; can probably do something like (complement leader?) at this point...
-                    (and (not= "Return" (uber/attr graph n :type))
+                    (and (not= n start-node)
                          (not (uber/attr graph n :block)) ;; can't already be a block
                          (not (is-a-dialog? graph n))
                          (= (uber/in-degree graph n) 1)
@@ -515,20 +519,23 @@
   (def dialog-confirm "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog - Confirm.arch")
   (def loading "/home/dvance/HLF-3-14/WA/BusinessObject/Loading HLF.arch")
   (def bulk-pick-by-load "/home/dvance/HLF-3-14/WA/BusinessObject/Bulk Pick by Load.arch")
+  (def find-work-assign "/home/dvance/HLF-3-14/WA/ProcessObject/Find Work & Assign.arch")
+  (def weird-one "/home/dvance/HLF-3-14/WA/ProcessObject/~Label Count~ label(s) sent to ~Printer ID~.arch")
+  (def hanging "/home/dvance/HLF-3-14/WA/ProcessObject/CC - Location Skip.arch")
 
-  (as-> (slurp bulk-pick-by-load) x
-    (source-details x)
-    (graph-inits x)
-    (multidigraph x)
-    ;; (short-circuit-returns x)
-    ;; (remove-calculate-fail-edges x)
-    ;; (remove-unreachable x)
-    ;; (merge-compare-fail-blocks x)
-    ;; (pass-blocks x)
-    (transform-graph x)
-    (uber/viz-graph x {;; :concentrate :true ;; unforutnately, this doesn't really work
-                      ;;  :save {:format :dot :filename "loading-hlf.dot"}
-                       }))
+  (-> hanging
+      (slurp)
+      (source-details)
+      (graph-inits)
+      (multidigraph)
+      (short-circuit-returns)
+      (remove-calculate-fail-edges)
+      (remove-unreachable)
+      (merge-compare-fail-blocks)
+      (transform-graph)
+      (uber/viz-graph
+       ;; {:save {:format :dot :filename "find-work-assign.dot"}}
+       ))
 
   )
 

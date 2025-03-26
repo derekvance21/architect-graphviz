@@ -1,4 +1,15 @@
-- [ ] fix CLI API
+- [ ] if something points to a node that is part of a basic block into a sink (return), then merge those nodes and create those extra merged nodes for it, to prevent tons of arrows going to Calculate - Log: Data Error
+    - but there needs to be a threshold, here. If it's only two edges going there, don't need to duplicate. But if 10 edges go to a basic block sink, might want to duplicate
+- [ ] in blocks, failure edges travel too far to get to return fail. If it's a failure (or I guess basic block sink, then it should be right next by)
+    - *IDEA*: if a action will fail to RETURN FAIL, then have it have like a like red background or something
+    - could do same thing with PASS
+- [X] merge the different types of blocks into one
+    - two types: pass blocks, and fail blocks
+    - but maybe you just combine them all. It's implied - if there isn't a pass edge out of here, then it's assumed the next thing down is the pass edge. Similarly - if there isn't a fail edge out of here, the next thing down is the fail edge.
+    - But that's a little tricky. Keeping with two types could be good. Then you can visually signify them somehow
+    - but now that I think about it, maybe not. I think it could be intuitive.
+    - Need way to derive styling of each cell with the merged node's attributes. And there's the problem that I can't get a double border on the cell for call types, which is what I want... Could just do a double width border for calls. That's fine.
+- [X] fix CLI API
     - default is `[FILE] ...` - this will create output to stdout
     - then, `-i` - in-place - this will create output at same place as input, but with output file extension added
         - if -T is svg, then output with `.html` file extension
@@ -7,14 +18,13 @@
     - `-T` - set output format type
     - `-X` - set output file extension?
     - `-I` - set input format type - *diff* format is the other one; default is *source* format
-- [ ] output file extension should be `.html` - this lets VSCode live preview linking work correctly
-- [ ] non-connected (unreachable code) nodes should be removed
-- [ ] merge simple block calculate, send and list nodes
-- [ ] edge links to their destination
-- [ ] refactor so that the program is - read the input, put it into an ubergraph. Then, apply a serious of transformations to the graph (merge basic clock, merge edges, set labels, color edges, always-pass-calculates, etc., etc.). And then if you're really crazy, you'd let the user pick the transformations
+- [X] output file extension should be `.html` - this lets VSCode live preview linking work correctly
+- [X] non-connected (unreachable code) nodes should be removed
+- [X] merge simple block calculate, send and list nodes
+- [ ] edge href `#` links to their destination
+- [X] refactor so that the program is - read the input, put it into an ubergraph. Then, apply a serious of transformations to the graph (merge basic clock, merge edges, set labels, color edges, always-pass-calculates, etc., etc.). And then if you're really crazy, you'd let the user pick the transformations
 - [ ] `architect-source-code` should have different extensions for different output types. Business and Process Objects have the same output format, but they're different from db/compare/calculate, so their file extensions should reflect that. This'll allow the user to do `clj -M -m cfg.core -i WA/*.pob` in one go.
-- [ ] if something points a node that is part of a basic block into a sink (return), then create those extra nodes for it, to prevent tons of arrows going to Calculate - Log: Data Error
-- [ ] omg - you know what's a good idea? So basically, how do you represent switch statements. So a string of compare actions, where each fails into the other, and succeeds into something else. So you can merge those into one node. So it's implied that going down through the node means you failed, and succeeding brings you out of the switch.
+- [X] omg - you know what's a good idea? So basically, how do you represent switch statements. So a string of compare actions, where each fails into the other, and succeeds into something else. So you can merge those into one node. So it's implied that going down through the node means you failed, and succeeding brings you out of the switch.
 F1? -> do "cancel" stuff
 F2? -> do "switch" stuff
 F3? -> do "done" stuff
