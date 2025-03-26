@@ -124,7 +124,7 @@
                                                         :note)
                                             :label node-label
                                             :fontsize "10"}
-                                     (contains? #{"Call"} type) (assoc :peripheries 2)
+                                     (contains? #{"Call"} type) (assoc :border 2 :peripheries 2)
                                      (contains? #{"Compare"} type) (assoc :style "dashed")
                                      (contains? #{"Return"} type) (assoc :style "rounded")
                                      (contains? #{"Call" "Calculate" "Database" "Compare"} type)
@@ -312,17 +312,14 @@
    (uber/nodes graph)))
 
 
-(defn remove-unconnected
+(defn remove-unreachable
   [graph]
-  (uber/remove-nodes*
-   graph
-   (into []
-         (comp
-          (map set)
-          (remove #(contains? % start-node))
-          cat)
-         ;; TODO this is not right. It should be reachable destinations from root
-         (alg/connected-components graph))))
+  (let [reachable (set (alg/post-traverse graph 0))]
+    (uber/remove-nodes*
+     graph
+     (into []
+           (remove #(contains? reachable %))
+           (uber/nodes graph)))))
 
 
 (defn find-blocks
@@ -354,8 +351,7 @@
                          (= (uber/in-degree graph n) 1)
                          #_(= (uber/out-degree graph n) 1) ;; Calculates should only have one out-edge...
                          ))]
-    (find-blocks graph leader? follower?))
-  )
+    (find-blocks graph leader? follower?)))
 
 
 (defn merge-nodes
@@ -382,13 +378,15 @@
                     (str/join
                      (into []
                            (map (fn [n]
-                                  (let [{:keys [label href style]} (uber/attrs graph n)]
+                                  (let [{:keys [label href style border]} (uber/attrs graph n)]
                                     (str "<TR><TD"
                                          " PORT=\"" n "\""
                                          (when href
                                            (str " HREF=\"" href "\""))
                                          (when style
                                            (str " STYLE=\"" style "\""))
+                                         (when border
+                                           (str " BORDER=\"" border "\""))
                                          ">"
                                          label
                                          "</TD></TR>"))))
@@ -396,7 +394,8 @@
                     "</TABLE>")]
      (-> graph
          (uber/add-nodes-with-attrs [new (-> (uber/attrs graph leader)
-                                             (assoc :label label)
+                                             (assoc :label label
+                                                    :block nodes)
                                              (merge attrs))])
          (uber/add-edges*
           (mapv (fn [[src dest attrs]]
@@ -415,7 +414,7 @@
   (reduce merge-nodes graph (calculate-basic-blocks graph)))
 
 
-(defn compare-switch-blocks
+(defn compare-fail-blocks
   [graph]
   (let [leader? (fn [n]
                   (and (= "Compare" (uber/attr graph n :type))
@@ -431,19 +430,21 @@
     (find-blocks graph leader? follower?)))
 
 
-(defn merge-compare-switch-blocks
+(defn merge-compare-fail-blocks
   [graph]
-  (reduce merge-nodes graph (compare-switch-blocks graph)))
+  (reduce merge-nodes graph (compare-fail-blocks graph)))
 
 
 (defn call-pass-blocks
   [graph]
   (let [leader? (fn [n]
                   (and (= "Call" (uber/attr graph n :type))
+                       (not (uber/attr graph n :block)) ;; can't already be a block
                        (or (> (uber/in-degree graph n) 1)
                            (some (fn [e] (not= :pass (uber/attr graph e :type))) (uber/in-edges graph n)))))
         follower? (fn [n predecessor depth]
                     (and (= "Call" (uber/attr graph n :type))
+                         (not (uber/attr graph n :block)) ;; can't already be a block
                          (= (uber/in-degree graph n) 1)
                          (= :pass (uber/attr graph (uber/find-edge graph predecessor n) :type))))]
     (find-blocks graph leader? follower?)))
@@ -455,6 +456,45 @@
   )
 
 
+(defn is-a-dialog?
+  [graph n]
+  (let [{:keys [type action]} (uber/attrs graph n)]
+    (and (= type "Call")
+         (contains? #{"Dialog" "Universal Quantity"} action))))
+
+
+;; have to exclude blocks and returns and Call Dialog / Universal Quantity
+(defn pass-blocks
+  [graph]
+  (let [leader? (fn [n]
+                  (and (not (uber/attr graph n :block)) ;; can't already be a block
+                       (not (is-a-dialog? graph n))
+                       (or (> (uber/in-degree graph n) 1)
+                           (some (fn [e]
+                                   (or
+                                    (= 0 (uber/src e))
+                                    (= :fail (uber/attr graph e :type))))
+                                 (uber/in-edges graph n)))))
+        follower? (fn [n predecessor depth]
+                    ;; can probably do something like (complement leader?) at this point...
+                    (and (not= "Return" (uber/attr graph n :type))
+                         (not (uber/attr graph n :block)) ;; can't already be a block
+                         (not (is-a-dialog? graph n))
+                         (= (uber/in-degree graph n) 1)
+                         (not= :fail (uber/attr graph (uber/find-edge graph predecessor n) :type))))]
+    (find-blocks graph leader? follower?)))
+
+
+(defn merge-pass-blocks
+  [graph]
+  (reduce
+   (merge-nodes {:shape :none
+                 :border 0
+                 :peripheries 0})
+   graph
+   (pass-blocks graph)))
+
+
 (defn transform-graph
   [graph]
   (-> graph
@@ -462,29 +502,34 @@
       ;; TODO - remove Goto nodes
       (remove-calculate-fail-edges)
       (merge-edges)
-      (remove-unconnected)
-      (merge-basic-blocks)
-      (merge-compare-switch-blocks)
-      (merge-call-pass-blocks)
+      (remove-unreachable)
+      (merge-compare-fail-blocks)
+      (merge-pass-blocks) ;; (merge-basic-blocks) (merge-call-pass-blocks)
       (color-edges)))
 
 
 (comment
-  
+
   (def receipt-from-production "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch")
   (def dialog "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog.arch")
   (def dialog-confirm "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog - Confirm.arch")
   (def loading "/home/dvance/HLF-3-14/WA/BusinessObject/Loading HLF.arch")
+  (def bulk-pick-by-load "/home/dvance/HLF-3-14/WA/BusinessObject/Bulk Pick by Load.arch")
 
-  (as-> (slurp loading) x
+  (as-> (slurp bulk-pick-by-load) x
     (source-details x)
     (graph-inits x)
     (multidigraph x)
+    ;; (short-circuit-returns x)
+    ;; (remove-calculate-fail-edges x)
+    ;; (remove-unreachable x)
+    ;; (merge-compare-fail-blocks x)
+    ;; (pass-blocks x)
     (transform-graph x)
-    (uber/viz-graph x #_{:save {:format :dot :filename "loading-hlf.dot"}})
-    
-    )
-  
+    (uber/viz-graph x {;; :concentrate :true ;; unforutnately, this doesn't really work
+                      ;;  :save {:format :dot :filename "loading-hlf.dot"}
+                       }))
+
   )
 
 
