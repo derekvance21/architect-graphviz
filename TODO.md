@@ -1,6 +1,12 @@
-- [ ] if something points to a node that is part of a basic block into a sink (return), then merge those nodes and create those extra merged nodes for it, to prevent tons of arrows going to Calculate - Log: Data Error
+- [ ] OR BLOCKS:
+    - two or more blocks, where the first fails into the second. And all of them pass to the same destination
+    - you can do them like merged tables, where everything in the same row!
+    - and in theory, you can insert that into a pass block, as just another table row
+    - and it only works for compare, b/c the assumption is there are no side-effects
+    - so for n compares linked in an OR block, you remove n-1 edges
+- [~] if something points to a node that is part of a basic block into a sink (return), then merge those nodes and create those extra merged nodes for it, to prevent tons of arrows going to Calculate - Log: Data Error
     - but there needs to be a threshold, here. If it's only two edges going there, don't need to duplicate. But if 10 edges go to a basic block sink, might want to duplicate
-- [ ] in blocks, failure edges travel too far to get to return fail. If it's a failure (or I guess basic block sink, then it should be right next by)
+- [X] in blocks, failure edges travel too far to get to return fail. If it's a failure (or I guess basic block sink, then it should be right next by)
     - *IDEA*: if a action will fail to RETURN FAIL, then have it have like a like red background or something
     - could do same thing with PASS
 - [X] merge the different types of blocks into one

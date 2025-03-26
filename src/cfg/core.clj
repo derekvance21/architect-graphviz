@@ -267,6 +267,30 @@
         (uber/remove-nodes* return-nodes))))
 
 
+(defn short-circuit-sinks
+  [graph]
+  (let [sink-nodes (filterv
+                    (fn [n]
+                      (and (zero? (uber/out-degree graph n))
+                           (> (uber/in-degree graph n) 3)))
+                    (uber/nodes graph))]
+
+    (-> (reduce
+         (fn [g sink-edge]
+           (let [[src dest edge-attrs] (uber/edge-with-attrs graph sink-edge)
+                 new-sink (str (get edge-attrs :tailport src) \- dest)]
+             (-> g
+                 (uber/add-nodes-with-attrs [new-sink (uber/attrs graph dest)])
+                 (uber/add-edges [src new-sink (-> edge-attrs
+                                                   #_(assoc ;;:constraint :false
+                                                    :minlen 0      
+                                                    )
+                                                   ) ]))))
+         graph
+         (mapcat #(uber/in-edges graph %) sink-nodes))
+        (uber/remove-nodes* sink-nodes))))
+
+
 (defn remove-calculate-fail-edges
   [graph]
   (uber/remove-edges*
@@ -396,16 +420,19 @@
      (-> graph
          (uber/add-nodes-with-attrs [new (-> (uber/attrs graph leader)
                                              (assoc :label label
-                                                    :block nodes)
+                                                    :block true)
                                              (merge attrs))])
          (uber/add-edges*
           (mapv (fn [[src dest attrs]]
-                  [src new (assoc attrs :headport dest)])
+                  [src new (assoc attrs
+                                  :headport dest)])
                 entries))
          (uber/add-edges*
           (mapv (fn [[src dest attrs]]
                   [new dest (assoc attrs
-                                   :tailport src)])
+                                   :tailport src
+                                   ;; :minlen 0
+                                   )])
                 exits))
          (uber/remove-nodes* nodes)))))
 
@@ -516,17 +543,18 @@
             fail-to-fail-edges)))
 
 
+;; TODO - remove Goto nodes
 (defn transform-graph
   [graph]
   (-> graph
       (merge-edges)
-      (color-fail-to-fail)
-      ;; TODO - remove Goto nodes
-      (short-circuit-returns)
       (remove-calculate-fail-edges)
+      (color-fail-to-fail)
+      (short-circuit-returns)
       (remove-unreachable)
       (merge-compare-fail-blocks)
-      (merge-pass-blocks) ;; (merge-basic-blocks) (merge-call-pass-blocks)
+      (merge-pass-blocks)
+      (short-circuit-sinks)
       (color-edges)))
 
 
@@ -541,14 +569,22 @@
   (def weird-one "/home/dvance/HLF-3-14/WA/ProcessObject/~Label Count~ label(s) sent to ~Printer ID~.arch")
   (def hanging "/home/dvance/HLF-3-14/WA/ProcessObject/CC - Location Skip.arch")
 
-  (-> hanging
+  
+  (-> bulk-pick-by-load
       (slurp)
       (source-details)
       (graph-inits)
       (multidigraph)
       (transform-graph)
+      (as-> g
+            (reduce 
+             #(uber/add-attr %1 %2 :constraint :false)
+             g
+             (uber/edges g)
+             ))
       (uber/viz-graph
-       ;; {:save {:format :dot :filename "find-work-assign.dot"}}
+       
+      ;;  {:save {:format :dot :filename "find-work-assign.dot"}}
        ))
 
   )
