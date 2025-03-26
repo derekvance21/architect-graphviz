@@ -59,12 +59,16 @@
 
 (defn xml-escape
   [s]
-  (str/escape s {\& "&amp;"
-                 \> "&gt;"
-                 \< "&lt;"
-                 \" "&quot;"
-                 \' "&apos;"}))
+  (when s
+    (str/escape s {\& "&amp;"
+                   \> "&gt;"
+                   \< "&lt;"
+                   \" "&quot;"
+                   \' "&apos;"}))
+  )
 
+
+(def start-node 0)
 
 (defn name->href
   [name]
@@ -101,7 +105,7 @@
                       ([{:keys [label line type action]} node-id]
                        (let [node-label (str "<FONT>"
                                              (str/join "<br />"
-                                                       [(str \[ line \] (when label \space) label)
+                                                       [(str \[ line \] (when label \space) (xml-escape label))
                                                         type
                                                         (xml-escape action)])
                                              "</FONT>")
@@ -126,7 +130,8 @@
                                      (contains? #{"Call" "Calculate" "Database" "Compare"} type)
                                      (assoc :href
                                             (if (= type "Call")
-                                              (str "../ProcessObject/" (xml-escape (name->href action)) ".arch.svg")
+                                              ;; TODO - this is so bad. need to fix this. Shouldn't be constrained to ".html", right?
+                                              (str "../ProcessObject/" (xml-escape (name->href action)) ".html")
                                               (str "../" type "/" (xml-escape (name->href action)) ".arch")))
                                      (= type "Return") (assoc
                                                         :style :filled
@@ -144,13 +149,13 @@
                [[line pass-line {:type :pass}]
                 [line fail-line {:type :fail}]]))))]
     (into
-     [[0 {:label ""
+     [[start-node {:label ""
           :shape :doublecircle
           ;; :rank :min ;; the start node should always be at the top anyways, but this is how rank could be used
           ;; :fillcolor :black
           ;; :fontcolor :black
           }]
-      [0 (:line (next 0))]]
+      [start-node (:line (next 0))]]
      (mapcat detail-nodes-and-edges)
      ds)))
 
@@ -285,7 +290,6 @@
 
 (defn merge-edges
   [graph]
-  ;; TODO
   (reduce
    (fn [g n]
      (let [out-edges (uber/out-edges g n)]
@@ -297,7 +301,6 @@
                 (-> g'
                     (uber/remove-attr e :type) ;; becomes a "type"-less edge
                     (uber/remove-edges* es))
-
                 g'))
             g
             (group-by uber/dest out-edges))
@@ -316,29 +319,143 @@
    (into []
          (comp
           (map set)
-          (remove #(contains? % 0))
+          (remove #(contains? % start-node))
           cat)
          (alg/connected-components graph))))
+
+
+(defn find-blocks
+  [graph leader? follower?]
+  (into []
+        (comp
+         (filter leader?)
+         (map (fn [l]
+                (into []
+                      (alg/bf-traverse
+                       graph
+                       l
+                       :when (fn [neighbor predecessor depth]
+                               (follower? neighbor predecessor depth))))))
+         (filter next))
+        (uber/nodes graph)))
+
+
+(defn calculate-basic-blocks
+  [graph]
+  (let [leader? (fn [n]
+                  (and (= "Calculate" (uber/attr graph n :type))
+                       (some (fn [e]
+                               (or (uber/attr graph e :type)
+                                   (not= "Calculate" (uber/attr graph (uber/src e) :type))))
+                             (uber/in-edges graph n))))
+        follower? (fn [n _ _]
+                    (and (= "Calculate" (uber/attr graph n :type))
+                         (= (uber/in-degree graph n) 1)
+                         #_(= (uber/out-degree graph n) 1) ;; Calculates should only have one out-edge...
+                         ))]
+    (find-blocks graph leader? follower?))
+  )
+
+
+(defn merge-nodes
+  [graph nodes]
+  (let [new (str/join \, nodes)
+        leader (first nodes)
+        entries (into [] (map #(uber/edge-with-attrs graph %)) (uber/in-edges graph leader))
+        exits (into []
+                    (comp
+                     (mapcat #(uber/out-edges graph %))
+                     (remove #(contains? (set nodes) (uber/dest %))) ;; remove edges that are pointing to within the block
+                     (map #(uber/edge-with-attrs graph %)))
+                    nodes)
+        label (str "<TABLE"
+                   " BORDER=\"0\""
+                   " CELLBORDER=\"1\""
+                   ">"
+                   (str/join
+                    (into []
+                          (map (fn [n]
+                                 (let [{:keys [label href style]} (uber/attrs graph n)]
+                                   (str "<TR><TD"
+                                        " PORT=\"" n "\""
+                                        (when href
+                                          (str " HREF=\"" href "\""))
+                                        (when style
+                                          (str " STYLE=\"" style "\""))
+                                        ">"
+                                        label
+                                        "</TD></TR>"))))
+                          nodes))
+                   "</TABLE>")]
+    (-> graph
+        (uber/add-nodes-with-attrs [new (-> (uber/attrs graph leader)
+                                            (assoc :id new :label label :shape :none))])
+        (uber/add-edges*
+         (mapv (fn [[src dest attrs]]
+                 [src new attrs (assoc attrs :headport dest)])
+               entries))
+        (uber/add-edges*
+         (mapv (fn [[src dest attrs]]
+                 [new dest (assoc attrs :tailport src)])
+               exits))
+        (uber/remove-nodes* nodes))))
+
+
+(defn merge-basic-blocks
+  [graph]
+  (reduce merge-nodes graph (calculate-basic-blocks graph))
+  )
+
+
+(defn compare-switch-blocks
+  [graph]
+  (let [leader? (fn [n]
+                  (and (= "Compare" (uber/attr graph n :type))
+                       (some (fn [e]
+                               (or (not= "Compare" (uber/attr graph (uber/src e) :type)) ;; entry is from a non-compare
+                                   (= :pass (uber/attr graph e :type))) ;; entry is a pass edge
+                               )
+                             (uber/in-edges graph n))))
+        follower? (fn [n predecessor depth]
+                    (and (= "Compare" (uber/attr graph n :type))
+                         (= (uber/in-degree graph n) 1)
+                         (= :fail (uber/attr graph (uber/find-edge graph predecessor n) :type))))]
+    (find-blocks graph leader? follower?)))
+
+
+(defn merge-compare-switch-blocks
+  [graph]
+  (reduce merge-nodes graph (compare-switch-blocks graph)))
 
 
 (defn transform-graph
   [graph]
   (-> graph
       (short-circuit-returns)
+      ;; TODO - remove Goto nodes
       (remove-calculate-fail-edges)
       (merge-edges)
       (remove-unconnected)
+      (merge-basic-blocks)
+      (merge-compare-switch-blocks)
       (color-edges)))
 
 
 (comment
+  
+  (def receipt-from-production "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch")
+  (def dialog "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog.arch")
+  (def dialog-confirm "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog - Confirm.arch")
 
-  (as-> (slurp "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch") x
+  (as-> (slurp dialog-confirm) x
     (source-details x)
     (graph-inits x)
     (multidigraph x)
     (transform-graph x)
-    (uber/viz-graph x))
+    (merge-compare-switch-blocks x)
+    (uber/viz-graph x #_{:save {:format :dot :filename "dialog-confirm.dot"}})
+    
+    )
   
   )
 
