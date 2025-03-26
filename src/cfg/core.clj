@@ -499,13 +499,31 @@
    (pass-blocks graph)))
 
 
+(defn color-fail-to-fail
+  [graph]
+  (let [fail-to-fail-edges (into []
+                                 (comp (filter (fn [node]
+                                                 (let [{:keys [type action]} (uber/attrs graph node)]
+                                                   (and (= type "Return") (= action "FAIL")))))
+                                       (mapcat #(uber/in-edges graph %))
+                                       (filter #(= :fail (uber/attr graph % :type))))
+                                 (uber/nodes graph))]
+    (reduce (fn [g e]
+              (-> g
+                  (uber/add-attr (uber/src e) :fillcolor "#ffc2c2")
+                  (uber/remove-edges e)))
+            graph
+            fail-to-fail-edges)))
+
+
 (defn transform-graph
   [graph]
   (-> graph
-      (short-circuit-returns)
-      ;; TODO - remove Goto nodes
-      (remove-calculate-fail-edges)
       (merge-edges)
+      (color-fail-to-fail)
+      ;; TODO - remove Goto nodes
+      (short-circuit-returns)
+      (remove-calculate-fail-edges)
       (remove-unreachable)
       (merge-compare-fail-blocks)
       (merge-pass-blocks) ;; (merge-basic-blocks) (merge-call-pass-blocks)
@@ -528,10 +546,6 @@
       (source-details)
       (graph-inits)
       (multidigraph)
-      (short-circuit-returns)
-      (remove-calculate-fail-edges)
-      (remove-unreachable)
-      (merge-compare-fail-blocks)
       (transform-graph)
       (uber/viz-graph
        ;; {:save {:format :dot :filename "find-work-assign.dot"}}
