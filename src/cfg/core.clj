@@ -321,6 +321,7 @@
           (map set)
           (remove #(contains? % start-node))
           cat)
+         ;; TODO this is not right. It should be reachable destinations from root
          (alg/connected-components graph))))
 
 
@@ -358,53 +359,60 @@
 
 
 (defn merge-nodes
-  [graph nodes]
-  (let [new (str/join \, nodes)
-        leader (first nodes)
-        entries (into [] (map #(uber/edge-with-attrs graph %)) (uber/in-edges graph leader))
-        exits (into []
-                    (comp
-                     (mapcat #(uber/out-edges graph %))
-                     (remove #(contains? (set nodes) (uber/dest %))) ;; remove edges that are pointing to within the block
-                     (map #(uber/edge-with-attrs graph %)))
-                    nodes)
-        label (str "<TABLE"
-                   " BORDER=\"0\""
-                   " CELLBORDER=\"1\""
-                   ">"
-                   (str/join
-                    (into []
-                          (map (fn [n]
-                                 (let [{:keys [label href style]} (uber/attrs graph n)]
-                                   (str "<TR><TD"
-                                        " PORT=\"" n "\""
-                                        (when href
-                                          (str " HREF=\"" href "\""))
-                                        (when style
-                                          (str " STYLE=\"" style "\""))
-                                        ">"
-                                        label
-                                        "</TD></TR>"))))
-                          nodes))
-                   "</TABLE>")]
-    (-> graph
-        (uber/add-nodes-with-attrs [new (-> (uber/attrs graph leader)
-                                            (assoc :id new :label label :shape :none))])
-        (uber/add-edges*
-         (mapv (fn [[src dest attrs]]
-                 [src new attrs (assoc attrs :headport dest)])
-               entries))
-        (uber/add-edges*
-         (mapv (fn [[src dest attrs]]
-                 [new dest (assoc attrs :tailport src)])
-               exits))
-        (uber/remove-nodes* nodes))))
+  ([attrs]
+   (fn [graph nodes]
+     (merge-nodes graph nodes attrs)))
+  ([graph nodes]
+   (merge-nodes graph nodes {:shape :none}))
+  ([graph nodes attrs]
+   (let [new (str/join \, nodes)
+         leader (first nodes)
+         entries (into [] (map #(uber/edge-with-attrs graph %)) (uber/in-edges graph leader))
+         exits (into []
+                     (comp
+                      (mapcat #(uber/out-edges graph %))
+                      (remove #(contains? (set nodes) (uber/dest %))) ;; remove edges that are pointing to within the block
+                      (map #(uber/edge-with-attrs graph %)))
+                     nodes)
+         label (str "<TABLE"
+                    " BORDER=\"" (if-let [border (:border attrs)] border 0) "\""
+                    " CELLBORDER=\"1\""
+                    ;; " CELLSPACING=\"4\"" ;; default is 2
+                    ">"
+                    (str/join
+                     (into []
+                           (map (fn [n]
+                                  (let [{:keys [label href style]} (uber/attrs graph n)]
+                                    (str "<TR><TD"
+                                         " PORT=\"" n "\""
+                                         (when href
+                                           (str " HREF=\"" href "\""))
+                                         (when style
+                                           (str " STYLE=\"" style "\""))
+                                         ">"
+                                         label
+                                         "</TD></TR>"))))
+                           nodes))
+                    "</TABLE>")]
+     (-> graph
+         (uber/add-nodes-with-attrs [new (-> (uber/attrs graph leader)
+                                             (assoc :label label)
+                                             (merge attrs))])
+         (uber/add-edges*
+          (mapv (fn [[src dest attrs]]
+                  [src new (assoc attrs :headport dest)])
+                entries))
+         (uber/add-edges*
+          (mapv (fn [[src dest attrs]]
+                  [new dest (assoc attrs
+                                   :tailport src)])
+                exits))
+         (uber/remove-nodes* nodes)))))
 
 
 (defn merge-basic-blocks
   [graph]
-  (reduce merge-nodes graph (calculate-basic-blocks graph))
-  )
+  (reduce merge-nodes graph (calculate-basic-blocks graph)))
 
 
 (defn compare-switch-blocks
@@ -428,6 +436,25 @@
   (reduce merge-nodes graph (compare-switch-blocks graph)))
 
 
+(defn call-pass-blocks
+  [graph]
+  (let [leader? (fn [n]
+                  (and (= "Call" (uber/attr graph n :type))
+                       (or (> (uber/in-degree graph n) 1)
+                           (some (fn [e] (not= :pass (uber/attr graph e :type))) (uber/in-edges graph n)))))
+        follower? (fn [n predecessor depth]
+                    (and (= "Call" (uber/attr graph n :type))
+                         (= (uber/in-degree graph n) 1)
+                         (= :pass (uber/attr graph (uber/find-edge graph predecessor n) :type))))]
+    (find-blocks graph leader? follower?)))
+
+
+(defn merge-call-pass-blocks
+  [graph]
+  (reduce (merge-nodes {:shape :none :border 1 :peripheries 0}) graph (call-pass-blocks graph))
+  )
+
+
 (defn transform-graph
   [graph]
   (-> graph
@@ -438,6 +465,7 @@
       (remove-unconnected)
       (merge-basic-blocks)
       (merge-compare-switch-blocks)
+      (merge-call-pass-blocks)
       (color-edges)))
 
 
@@ -446,14 +474,14 @@
   (def receipt-from-production "/home/dvance/HLF-3-14/WA/BusinessObject/Receipt from Production.arch")
   (def dialog "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog.arch")
   (def dialog-confirm "/home/dvance/HLF-3-14/WA/ProcessObject/Dialog - Confirm.arch")
+  (def loading "/home/dvance/HLF-3-14/WA/BusinessObject/Loading HLF.arch")
 
-  (as-> (slurp dialog-confirm) x
+  (as-> (slurp loading) x
     (source-details x)
     (graph-inits x)
     (multidigraph x)
     (transform-graph x)
-    (merge-compare-switch-blocks x)
-    (uber/viz-graph x #_{:save {:format :dot :filename "dialog-confirm.dot"}})
+    (uber/viz-graph x #_{:save {:format :dot :filename "loading-hlf.dot"}})
     
     )
   
