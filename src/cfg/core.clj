@@ -448,9 +448,11 @@
          (filter #(= :fail (uber/attr graph % :type))))
    (completing
     (fn [g e]
-      (-> g
-          (uber/add-attr (uber/src e) :fillcolor "#ffc2c2")
-          (uber/remove-edges e))))
+      (let [{:keys [style]} (uber/attrs g (uber/src e))]
+        (-> g
+            (uber/add-attrs (uber/src e) {:style (str (when style (str (name style) \,)) "filled")
+                                          :fillcolor "#ffc2c2"})
+            (uber/remove-edges e)))))
    graph
    (uber/nodes graph)))
 
@@ -499,9 +501,9 @@
 (defn transform-graph
   [graph]
   (-> graph
-      (remove-calculate-fail-edges)
-      (color-fail-to-fail)
-      (merge-edges)
+      (remove-calculate-fail-edges) ;; 1
+      (merge-edges) ;; 2
+      (color-fail-to-fail) ;; 3
       (remove-unreachable)
       (short-circuit-returns) ;; make this short-circuit-sink-paths
       (merge-basic-blocks)
