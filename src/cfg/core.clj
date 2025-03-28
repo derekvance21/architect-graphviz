@@ -421,10 +421,11 @@
                     (or (nil? e) ;; no in-edges
                         (seq es) ;; more than one in-edge
                         (#{:pass :fail} (uber/attr g e :type)) ;; conditional in-edge
+                        (= start-node (uber/src e))
                         )))
         follower? (fn [g n predecessor depth]
                     (not (leader? g n)))]
-    (find-blocks (uber/remove-nodes graph start-node) leader? follower?)))
+    (find-blocks graph leader? follower?)))
 
 
 (defn merge-basic-blocks
