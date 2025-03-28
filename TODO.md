@@ -1,3 +1,6 @@
+- [ ] nodes (think compare nodes) that have the exact same pair of out edges, and have the exact same type/action. Those could probably be merged? B/c it's like it doesn't matter which one an edge goes to. They'll do the exact same thing
+- [ ] this is a tough one. ASN Receipt HLF has an example of this. Two calculate actions, that are destinations of like 5 different things, each. And both lead to sinks (fail). So in theory, you can merge each calculate with the return. So it's like you'd do multiple merge sinks...
+- [ ] switch statements should maybe be horizontal :eyes:
 - [ ] OR BLOCKS:
     - two or more blocks, where the first fails into the second. And all of them pass to the same destination
     - you can do them like merged tables, where everything in the same row!
